@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Credit Web Portal — Realtime Multi-user with Logbook (Admin Update)</title>
+<style>
+/* --- existing UI styles (kept intact) --- */
+body { font-family: Arial,sans-serif; margin:10px; background:#f9f9f9; }
+h2 { margin-top:20px; font-size:1.2rem; }
+.top-box { margin-bottom:15px; display:flex; flex-wrap:wrap; gap:10px; }
+.top-box label { flex:1 1 150px; }
+input, select { width:100%; padding:10px; margin-top:5px; border-radius:6px; border:1px solid #ccc; font-size:1rem; }
+.machine { margin:10px 0; padding:12px; border:1px solid #ccc; border-radius:10px; background:#fff; display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
+.machine b { font-size:1rem; margin-right:10px; }
+.light { width:15px; height:15px; border-radius:50%; background:#ccc; display:inline-block; vertical-align:middle; margin-right:8px; }
+.blink { animation: blink 1s infinite; }
+@keyframes blink { 0%,50%,100% { background-color:red; } 25%,75% { background-color:#fff; } }
+button { margin:5px; padding:10px 18px; font-size:1rem; border:none; border-radius:8px; cursor:pointer; color:white; }
+button:hover { opacity:0.9; }
+button:active { transform: scale(0.95); }
+button[onclick^="startMachine"] { background:#28a745; }
+button[onclick^="stopMachine"] { background:#dc3545; }
+button[onclick="clearLogs()"] { background:#007bff; margin-top:15px; }
+#downloadCSV { background:#6f42c1; }
+#downloadExcel { background:#ff9800; }
+#resetInputs { background:#17a2b8; }
+#logbookBtn { background:#2e7d32; } /* green for logbook */
+.logs { font-size:0.9rem; margin-top:8px; padding-left:10px; color:#444; width:100%; }
+table { width:100%; border-collapse:collapse; margin-top:10px; font-size:0.9rem; }
+th,td { border:1px solid #888; padding:8px; text-align:center; word-wrap:break-word; }
+th { background:#f2f2f2; font-size:0.95rem; }
+.table-container { overflow-x:auto; margin-top:10px; max-height:400px; overflow-y:auto; }
+.filter-box { margin-top:15px; display:flex; flex-wrap:wrap; gap:10px; }
+.toggle-box { margin-top:10px; display:flex; align-items:center; gap:8px; }
+.user-badge { font-size:0.8rem; color:#666; margin-left:6px; }
+
+/* --- Modal for Logbook date selection (simple) --- */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items:center; justify-content:center; z-index: 9999; }
+
+
+.modal {
+  background:white;
+  padding:16px;
+  border-radius:8px;
+  width:420px;
+  max-height:80vh;
+  display:flex;
+  flex-direction:column;
+  box-shadow:0 6px 18px rgba(0,0,0,0.2);
+}
+
+.modal-content {
+  flex:1;
+  overflow-y:auto;
+  margin-bottom:12px;
+}
+
+.modal-footer {
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+}
+
+
+.modal h3 { margin-top:0; margin-bottom:10px; font-size:1.05rem; }
+.modal .row { display:flex; gap:8px; margin-bottom:8px; }
+.modal label { font-size:0.9rem; flex:1; display:flex; flex-direction:column; }
+.modal button { margin:8px 4px 0 0; }
+
+/* Admin modal specific */
+.admin-list { max-height:220px; overflow:auto; border:1px solid #ddd; padding:8px; border-radius:6px; margin-bottom:8px; }
+.admin-item { display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px dashed #eee; }
+.admin-item:last-child{ border-bottom:none; }
+
+/* small responsive tweaks */
+@media (max-width:720px){ .top-box label{ flex:1 1 100%; } 
+
+.modal {
+  background:white;
+  padding:16px;
+  border-radius:8px;
+  width:420px;
+  max-height:80vh;
+  display:flex;
+  flex-direction:column;
+  box-shadow:0 6px 18px rgba(0,0,0,0.2);
+}
+
+.modal-content {
+  flex:1;
+  overflow-y:auto;
+  margin-bottom:12px;
+}
+
+.modal-footer {
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+}
+
+ }
+
+.verification-item {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+}
+.verification-item b {
+  flex:1;
+}
+.verification-item label {
+  display:flex;
+  flex-direction:column;
+  font-size:0.85rem;
+}
+.verification-item input[type="time"] {
+  padding:6px;
+  border:1px solid #ccc;
+  border-radius:6px;
+}
+
+
+
+.blink {
+  animation: blinkAnim 1s infinite !important;
+}
+@keyframes blinkAnim {
+  0% { background-color: #ff1744; }
+  50% { background-color: #ff8a80; }
+  100% { background-color: #ff1744; }
+}
+
+}
+
+</style>
+</head>
+<body>
+
+<div class="top-box">
+  <label>Product Name
+    <select id="productSelect"><option value="">-- select product --</option></select>
+  </label>
+  <label>Strength
+    <select id="strengthSelect"><option value="">-- select strength --</option></select>
+  </label>
+  <label>Batch Number
+    <input type="text" id="batchNumber" placeholder="Enter batch number">
+  </label>
+  <label>Remark
+    <input type="text" id="remark" placeholder="Enter remark (optional)">
+  </label>
+</div>
+<button id="resetInputs" onclick="resetInputs()">Reset Product & Batch</button>
+
+<button id="dailyVerificationBtn" style="background:#ff5722; margin-bottom:10px;" onclick="openDailyVerificationModal()">Daily Verification</button>
+<div id="noAccessBanner" style="display:none; background:#ff1744; color:white; text-align:center; padding:8px; font-weight:bold;">🚫 System Locked – No More Access</div>
+<div id="firebaseDisconnectBanner" style="display:none; background:#e53935; color:white; text-align:center; padding:8px; font-weight:bold;">🔌 Firebase Disconnected — retrying automatically...</div>
+<h2>Machine List</h2>
+<div id="machines"></div>
+
+<!-- Buttons: keep same layout, add Logbook button and Admin -->
+<button onclick="clearLogs()">Clear All Logs</button>
+<button id="logbookBtn" onclick="openLogbookModal()">Logbook</button>
+<!-- Admin button now opens a new tab with admin query param. -->
+<button id="adminBtn" onclick="openAdminModal()" style="background:#795548;">Admin</button>
+<button id="downloadCSV" onclick="downloadCSV()">Download Logs (CSV)</button>
+<h2>Log History</h2>
+<div class="toggle-box">
+  <input type="checkbox" id="toggleHidden" onchange="toggleHiddenLogs()">
+  <label for="toggleHidden">Show Hidden Logs</label>
+</div>
+
+<div class="filter-box">
+  <input type="text" id="filterProduct" placeholder="Filter by Product">
+  <input type="text" id="filterBatch" placeholder="Filter by Batch">
+  <input type="date" id="filterDate">
+  <button style="background:#9c27b0;" onclick="clearFilters()">Clear Filters</button>
+</div>
+
+<div class="table-container">
+  <table id="logHistory">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Machine Name</th>
+        <th>Product Name</th>
+        <th>Strength</th><th>Batch Number</th>
+        <th>Remark</th>
+        <th>Start Time</th>
+        <th>Stop Time</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- Logbook date modal -->
+<div id="logbookModal" class="modal-backdrop" role="dialog" aria-hidden="true">
+  <div class="modal" role="document">
+    <h3>Logbook — Generate Report</h3>
+    <div class="row">
+      <label>From
+        <input type="date" id="reportFrom">
+      </label>
+      <label>To
+        <input type="date" id="reportTo">
+      </label>
+    </div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button onclick="closeLogbookModal()" style="background:#9c27b0;">Cancel</button>
+      <button onclick="generateLogbookReport()" style="background:#2e7d32;">Generate Report</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Daily Verification modal -->
+<div id="dailyVerificationModal" class="modal-backdrop" role="dialog" aria-hidden="true">
+  <div class="modal" role="document">
+    <h3>Daily Verification</h3>
+    <div id="verificationList"></div>
+    <div class="modal-footer">
+      <button onclick="closeDailyVerificationModal()" style="background:#9c27b0;">Close</button>
+      <button onclick="saveDailyVerification()" style="background:#2e7d32;">Save Verification</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin modal -->
+<div id="adminModal" class="modal-backdrop" role="dialog" aria-hidden="true">
+  <div class="modal" role="document">
+  <div class="modal-content">
+    <h3>Admin — Manage Machines, Products & Users</h3>
+
+    <h4>Machines</h4>
+    <div class="admin-list" id="adminList"></div>
+    <div style="display:flex; gap:8px; margin-bottom:6px;">
+      <input type="text" id="newMachineName" placeholder="New machine name" style="flex:1; padding:8px;">
+      <button onclick="addMachine()" style="background:#1976d2;">Add</button>
+    </div>
+
+    <hr>
+    <h4>Products & Strengths</h4>
+    <div style="display:flex; gap:8px; margin-bottom:6px;">
+      <input type="text" id="newProductName" placeholder="Product name" style="flex:1; padding:8px;">
+      <input type="text" id="newProductStrengths" placeholder="Strengths (comma-separated, e.g. 250mg,500mg)" style="flex:1; padding:8px;">
+      <button onclick="addProductWithStrengths()" style="background:#1976d2;">Add</button>
+    </div>
+    <div class="admin-list" id="productAdminList"></div>
+
+    
+<hr>
+<h4>Daily Verification Machines</h4>
+<div class="admin-list" id="verificationAdminList"></div>
+<div style="display:flex; gap:8px; margin-bottom:6px;">
+  <input type="text" id="newVerificationMachine" placeholder="Machine name" style="flex:1; padding:8px;">
+  <button onclick="addVerificationMachine()" style="background:#1976d2;">Add</button>
+</div>
+
+    <hr>
+    <h4>Users</h4>
+<div style="margin:10px 0;"><button id="noAccessBtn" onclick="toggleNoAccess()" style="background:#ff1744;">No More Access</button></div>
+    <div style="display:flex; gap:10px; margin-bottom:8px;">
+      <button onclick="showUserAccess()" style="background:#28a745;">User Access</button>
+      <button onclick="showBlockedUsers()" style="background:#dc3545;">User Block</button>
+    </div>
+    <div class="admin-list" id="userAdminList"></div>
+
+    </div>
+  <div class="modal-footer">
+    <button onclick="closeAdminModal()" style="background:#9c27b0;">Close</button>
+  </div>
+</div>
+</div>
+
+<script type="module">
+/* ---------- Imports ---------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, push, set, onValue, update, remove, get } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import * as XLSX from "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+
+/* ---------- Firebase config (replace with your project config if needed) ---------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyD73_ssEPvrwxVRaOFkdptwoe1CNUJb_rk",
+  authDomain: "logbook-89713.firebaseapp.com",
+  databaseURL: "https://logbook-89713-default-rtdb.firebaseio.com",
+  projectId: "logbook-89713",
+  storageBucket: "logbook-89713.firebasestorage.app",
+  messagingSenderId: "102304432141",
+  appId: "1:102304432141:web:460f14b3371df698371544",
+  measurementId: "G-W8LKDRNMNJ"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* ---------- UI refs ---------- */
+const machinesDiv = document.getElementById("machines");
+const logHistoryTable = document.querySelector("#logHistory tbody");
+const productSelect = document.getElementById("productSelect");
+const strengthSelect = document.getElementById("strengthSelect");
+const batchInput = document.getElementById("batchNumber");
+const remarkInput = document.getElementById("remark");
+const logbookModal = document.getElementById("logbookModal");
+const reportFromEl = document.getElementById("reportFrom");
+const reportToEl = document.getElementById("reportTo");
+const adminModal = document.getElementById('adminModal');
+const adminListEl = document.getElementById('adminList');
+const productAdminList = document.getElementById('productAdminList');
+const userAdminList = document.getElementById('userAdminList');
+
+/* ---------- Machine list ---------- */
+const defaultMachineNames = ["Balance 2","Balance 3","RMG","FBP","Moisture Balance","Over head stirrer","Quadro Co-Mill","Blender","Rapid Dryer","TD Apparatus","Sieve Shaker","Compression Machine","Balance 1","Hardness Tester","DT Apparatus","Feasibility","Compression Machine 2","Auto-Coater","Rami Stirrer","Roll Compactor"];
+let machineNames = JSON.parse(localStorage.getItem('cw_machineNames') || 'null') || defaultMachineNames.slice();
+let originalOrder = machineNames.slice();
+
+/* ---------- Product & user local cache (backed by Firebase) ---------- */
+let productsCache = {}; // { productName: [strength1,strength2,...] }
+let usersCache = {}; // { deviceId: { username, status } }
+
+/* ---------- Local state (flattened logs) ---------- */
+let logs = []; // always rebuilt from Firebase snapshot for consistency
+let showLogs = true;
+let showHidden = false;
+
+/* ---------- New: user list filter state ---------- */
+let userListFilter = null; // null = do not show list, 'allow' = show allowed users, 'block' = show blocked users
+
+/* ---------- Helpers ---------- */
+function saveLogsLocal(){ localStorage.setItem("machineLogs", JSON.stringify(logs)); }
+function getDateTime(){ return new Date().toLocaleString(); }
+function todayISO(){
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${year}-${month}-${day}`;
+}
+function escapeHtml(s){ return String(s || "").replace(/[&<>\"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function escapeForJs(s){ return String(s).replace(/'/g,"\\'"); }
+
+function timeStringToSeconds(timeStr){
+  if(!timeStr) return 0;
+  const part = (timeStr.indexOf(',') !== -1) ? timeStr.split(',').pop().trim() : timeStr.trim();
+  const m = part.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  if(!m) {
+    const m2 = part.match(/(\d{1,2}):(\d{2})/);
+    if(!m2) return 0;
+    const hr2 = parseInt(m2[1],10);
+    const min2 = parseInt(m2[2],10);
+    return hr2*3600 + min2*60;
+  }
+  let hr = parseInt(m[1],10);
+  const min = parseInt(m[2],10);
+  const sec = m[3] ? parseInt(m[3],10) : 0;
+  const ampm = m[4] ? m[4].toUpperCase() : null;
+  if(ampm){
+    if(ampm === 'PM' && hr !== 12) hr += 12;
+    if(ampm === 'AM' && hr === 12) hr = 0;
+  }
+  return hr*3600 + min*60 + sec;
+}
+
+/* ---------- Render / UI update functions ---------- */
+function renderMachines(order){
+  machinesDiv.innerHTML = "";
+  order.forEach(name => {
+    const div = document.createElement("div");
+    div.className = "machine";
+    const safeId = name.replace(/\s+/g,'_');
+    div.innerHTML = `
+      <span class="light" id="light-${safeId}"></span>
+      <b>${escapeHtml(name)}</b>
+      <button onclick="startMachine('${escapeForJs(name)}')">Start</button>
+      <button onclick="stopMachine('${escapeForJs(name)}')">Stop</button>
+      <div class="logs" id="log-${safeId}"></div>
+    `;
+    machinesDiv.appendChild(div);
+    updateMachineLog(name);
+    const light = document.getElementById(`light-${safeId}`);
+    if (logs.some(l => l.machine === name && !l.stop) && light) light.classList.add("blink");
+  });
+}
+
+function reorderMachines(){
+  const running = logs.filter(l => !l.stop).map(l => l.machine);
+  const displayOrder = [...running];
+  originalOrder.forEach(name => { if (!displayOrder.includes(name)) displayOrder.push(name); });
+  renderMachines(displayOrder);
+}
+
+function populateProductSelect(){
+  productSelect.innerHTML = "<option value=\"\">-- select product --</option>";
+  Object.keys(productsCache).forEach(p => {
+    const opt = document.createElement('option'); opt.value = p; opt.textContent = p; productSelect.appendChild(opt);
+  });
+  // when product changes, populate strengths
+  productSelect.onchange = () => {
+    const p = productSelect.value;
+    strengthSelect.innerHTML = "<option value=\"\">-- select strength --</option>";
+    (productsCache[p] || []).forEach(s => { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; strengthSelect.appendChild(opt); });
+  };
+}
+
+function updateMachineLog(name){
+  const div = document.getElementById("log-" + name.replace(/\s+/g,'_'));
+  if(!div) return;
+  const machineLogs = logs.filter(l => l.machine === name);
+  const recent = machineLogs.slice(-1);
+  div.innerHTML = recent.map(l => `Start: ${formatDateDDMMYYYY(l.date)} ${formatTimeHHMM(l.start)} (by ${l.userStart}) | Stop: ${l.stop ? formatDateDDMMYYYY(l.date) + ' ' + formatTimeHHMM(l.stop) : 'Running...'}${l.stop ? ` (by ${l.userStop})` : ''}`).join("<br>");
+}
+function updateMachineLogAll(){ machineNames.forEach(name => updateMachineLog(name)); }
+
+async function updateHistory(){
+  let filtered = showLogs ? logs.slice() : [];
+  if(showHidden) filtered = logs.slice();
+
+  const prod = document.getElementById("filterProduct").value.toLowerCase();
+  const batch = document.getElementById("filterBatch").value.toLowerCase();
+  const dateFilter = document.getElementById("filterDate").value;
+
+  if(prod) filtered = filtered.filter(l => l.product && l.product.toLowerCase().includes(prod));
+  if(batch) filtered = filtered.filter(l => l.batch && l.batch.toLowerCase().includes(batch));
+  if(dateFilter) filtered = filtered.filter(l => l.date === dateFilter);
+
+  filtered.sort((a,b) => {
+    if (a.date !== b.date) {
+      return (a.date < b.date) ? 1 : -1;
+    }
+    const aSeconds = timeStringToSeconds(a.start);
+    const bSeconds = timeStringToSeconds(b.start);
+    return bSeconds - aSeconds;
+  });
+
+  logHistoryTable.innerHTML = filtered.map(l => `
+  <tr>
+    <td>${formatDateDDMMYYYY(l.date)}</td>
+    <td>${escapeHtml(l.machine)}</td>
+    <td>${escapeHtml(l.product)}</td>
+    <td>${escapeHtml(l.strength || "")}</td>
+    <td>${escapeHtml(l.batch)}</td>
+    <td>${escapeHtml(l.remark || "")}</td>
+    <td>${formatTimeHHMM(l.start)}</td><td>${l.stop ? formatTimeHHMM(l.stop) : ''}</td>
+  </tr>
+`).join("");
+}
+
+/* ---------- User display / device id ---------- */
+let currentUser = localStorage.getItem("cw_userName") || "";
+if(!currentUser){
+  const u = prompt("Enter your display name (will show in logs):","User");
+  currentUser = (u && u.trim()) ? u.trim() : "User";
+  localStorage.setItem("cw_userName", currentUser);
+}
+const deviceId = localStorage.getItem('cw_deviceId') || (`dev_` + Date.now());
+localStorage.setItem('cw_deviceId', deviceId);
+
+/* ---------- Firebase-based Products & Users ---------- */
+const productsRef = ref(db, 'products');
+const usersRef = ref(db, 'users');
+
+
+// listen products
+onValue(productsRef, snapshot => {
+  const data = snapshot.val() || {};
+  productsCache = {};
+  for (const id in data) {
+    const p = data[id];
+    if (!p || p.active === false) continue;
+    if (!p.name) continue;
+    if (!productsCache[p.name]) productsCache[p.name] = [];
+    if (p.strength && !productsCache[p.name].includes(p.strength)) {
+      productsCache[p.name].push(p.strength);
+    }
+  }
+  populateProductSelect();
+  renderProductAdminList();
+});
+// listen users// listen users
+onValue(usersRef, snapshot => {
+  const data = snapshot.val() || {};
+  usersCache = {};
+  for(const id in data){ usersCache[id] = data[id]; }
+  // render user admin list only when a filter is active (button clicked)
+  renderUserAdminList();
+  // check current user's status
+  const me = usersCache[deviceId];
+  if (me && me.status === 'block') {
+    alert('Access denied. You are blocked by Admin.');
+    document.body.innerHTML = '<h2>ACCESS DENIED</h2>';
+    throw new Error('Blocked');
+  }
+  if(!me){ set(ref(db, `users/${deviceId}`), { username: currentUser, status: 'allow', deviceId }); }
+});
+
+/* ---------- Admin UI renderers ---------- */
+function renderAdminList(){
+  adminListEl.innerHTML = '';
+  machineNames.forEach((m,idx)=>{
+    const div = document.createElement('div'); div.className='admin-item';
+    div.innerHTML = `<div>${escapeHtml(m)}</div><div><button onclick="removeMachine(${idx})" style="background:#dc3545;">Remove</button></div>`;
+    adminListEl.appendChild(div);
+  });
+}
+
+
+function renderProductAdminList(){
+  productAdminList.innerHTML = '';
+  get(productsRef).then(snap => {
+    const data = snap.val() || {};
+    for (const id in data) {
+      const p = data[id];
+      if (!p || p.active === false) continue; // skip inactive
+      const div = document.createElement('div'); 
+      div.className='admin-item';
+      div.innerHTML = `<div>${escapeHtml(p.name)} - ${escapeHtml(p.strength)}</div><div><button onclick="removeProduct('${id}')" style="background:#dc3545;">Remove</button></div>`;
+      productAdminList.appendChild(div);
+    }
+  });
+}
+function renderUserAdminList(){
+  userAdminList.innerHTML = '';
+  // If no filter is selected, hide user list completely (per request)
+  if(!userListFilter) return;
+  for(const id in usersCache){
+    const u = usersCache[id];
+    if(userListFilter && u.status !== userListFilter) continue;
+    const div = document.createElement('div'); div.className='admin-item';
+    const statusBtn = document.createElement('button');
+    if(u.status === 'allow') { statusBtn.textContent = 'Block'; statusBtn.style.background='#dc3545'; statusBtn.onclick = ()=> blockUser(id); }
+    else { statusBtn.textContent = 'Allow'; statusBtn.style.background='#28a745'; statusBtn.onclick = ()=> allowUser(id); }
+    div.innerHTML = `<div>${escapeHtml(u.username)} (${escapeHtml(id)})</div>`;
+    div.appendChild(statusBtn);
+    userAdminList.appendChild(div);
+  }
+}
+
+/* ---------- Admin actions ---------- */
+window.openAdminModal = function(){ renderAdminList(); renderProductAdminList(); renderUserAdminList(); renderVerificationAdminList(); adminModal.style.display='flex'; adminModal.setAttribute('aria-hidden','false'); }
+window.closeAdminModal = function(){ adminModal.style.display='none'; adminModal.setAttribute('aria-hidden','true');
+  // if this tab was opened as an admin tab via ?admin=1, close the tab when user clicks Close
+  try{ const params = new URLSearchParams(window.location.search); if(params.get('admin') === '1') window.close(); }catch(e){}
+}
+
+window.addMachine = function(){ const v = document.getElementById('newMachineName').value.trim(); if(!v){ alert('Enter machine name'); return; } if(machineNames.includes(v)){ alert('Machine already exists'); return; } machineNames.push(v); originalOrder = machineNames.slice(); localStorage.setItem('cw_machineNames', JSON.stringify(machineNames)); document.getElementById('newMachineName').value=''; renderAdminList(); reorderMachines(); }
+
+function addProductWithStrengths(){ return window.addProductWithStrengths(); }
+
+
+
+
+window.stopMachine = function(name){
+  const runningLog = [...logs].reverse().find(l => l.machine === name && !l.stop);
+  if(!runningLog){ alert('No running log found for this machine.'); return; }
+  // check block
+  const me = usersCache[deviceId]; if(me && me.status === 'block'){ alert('Access denied — you are blocked.'); return; }
+  const stopTime = getDateTime();
+  runningLog.stop = stopTime; runningLog.userStop = currentUser;
+  const { date, product, batch, id } = runningLog;
+  update(ref(db, `logs/${date}/${product}/${batch}/${name}/${id}`), { stop: stopTime, userStop: currentUser });
+}
+
+/* ---------- Clear All Logs with Password protection (real-time) ---------- */
+window.clearLogs = function(){ const pwd = prompt('Enter password to clear all logs:'); if(pwd !== '7046802785'){ alert('Incorrect password.'); return; } if(!confirm('Clear all logs for ALL users?')) return; set(ref(db,'logs'), null).catch(err=>console.error(err)); }
+
+/* ---------- Admin new-tab opener ---------- */
+window.openAdminInNewTab = function(){ // opens the same page with param admin=1, new tab will prompt for password and open modal
+  const url = window.location.origin + window.location.pathname + '?admin=1';
+  const win = window.open(url, '_blank');
+  if(!win) alert('Popup blocked. Please allow popups for this site.');
+}
+
+/* ---------- Generate Logbook Report (same as before) ---------- */
+window.openLogbookModal = function(){ reportFromEl.value=''; reportToEl.value=''; logbookModal.style.display='flex'; logbookModal.setAttribute('aria-hidden','false'); }
+window.closeLogbookModal = function(){ logbookModal.style.display='none'; logbookModal.setAttribute('aria-hidden','true'); }
+
+window.generateLogbookReport = function(){
+  const from = reportFromEl.value;
+  const to = reportToEl.value;
+  if(!from||!to){ alert('Please select both From and To dates.'); return; }
+  if(from>to){ alert('From cannot be after To'); return; }
+
+  const filtered = logs.filter(l=> l.date>=from && l.date<=to);
+  const byMachine = {};
+
+  filtered.forEach(l=>{
+    if(!byMachine[l.machine]) byMachine[l.machine]=[];
+    byMachine[l.machine].push(l);
+  });
+
+  if(Object.keys(byMachine).length===0){ alert('No activity in selected range'); return; }
+
+  const reportWin = window.open('','_blank');
+  if(!reportWin){ alert('Popup blocked'); return; }
+
+  const reportStyles = `
+    <style>
+      body{font-family:Arial;padding:20px}
+      h1{font-size:18px}
+      table{width:100%;border-collapse:collapse}
+      th,td{border:1px solid #444;padding:8px;text-align:left}
+      th{background:#eee}
+      .print-btn{position:fixed;top:12px;right:12px;background:#1976d2;color:white;padding:8px 12px;border-radius:6px;}
+    
+      h2{page-break-before:always;}
+</style>
+  `;
+
+  let bodyHtml=`
+    <button class="print-btn" onclick="window.print()">Print Report</button>
+    <h1>Logbook Report</h1>
+    <div>Date range: <strong>${from}</strong> - <strong>${to}</strong></div>
+  `;
+
+  originalOrder.forEach(machine=>{
+    const entries = byMachine[machine];
+    if(!entries||entries.length===0) return;
+
+    // ✅ Sort by date, then start time earliest → latest
+    entries.sort((a,b)=>{
+      if (a.date !== b.date) return (a.date > b.date) ? 1 : -1;
+      const aSec = timeStringToSeconds(a.start);
+      const bSec = timeStringToSeconds(b.start);
+      return aSec - bSec;
+    });
+
+    bodyHtml += `
+      <h2>${escapeHtml(machine)}</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Product</th><th>Batch</th><th>Start</th><th>Stop</th></tr></thead>
+        <tbody>
+    `;
+    entries.forEach(e=>{
+      bodyHtml += `
+        <tr>
+          <td>${formatDateDDMMYYYY(e.date)}</td><td>${escapeHtml(e.product||"-")} ${escapeHtml(e.strength||"")}</td><td>${escapeHtml(e.batch||"-")}</td><td>${formatTimeHHMM(e.start)}</td><td>${formatTimeHHMM(e.stop)}</td>
+          </tr>
+      `;
+    });
+    bodyHtml += `</tbody></table>`;
+  });
+
+  reportWin.document.open();
+  reportWin.document.write(`<html><head><title>Logbook ${from} - ${to}</title>${reportStyles}</head><body>${bodyHtml}</body></html>`);
+  reportWin.document.close();
+  closeLogbookModal();
+}
+
+
+/* ---------- CSV / Excel downloads (using current logs array) ---------- */
+window.downloadCSV = function(){
+  let csv = 'Date,Machine,Product,Strength,Batch,Remark,Start,Stop\n';
+  logs.forEach(l=>{
+    csv += `${formatDateDDMMYYYY(l.date)},${csvEscape(l.machine)},${csvEscape(l.product)},${csvEscape(l.strength||'')},${csvEscape(l.batch)},${csvEscape(l.remark||'')},${csvEscape(formatTimeHHMM(l.start))},${csvEscape(l.stop ? formatTimeHHMM(l.stop) : '')}
+`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'machine_logs.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+function csvEscape(v){ if(v==null) return ''; if(String(v).includes(',')||String(v).includes('"')) return `\"${String(v).replace(/\"/g,'\"\"') }\"`; return v; }
+
+/* ---------- Reset and filters ---------- */
+window.resetInputs = function(){ const running = logs.filter(l=>!l.stop).map(l=>l.machine); if(running.length>0){ alert('Cannot reset. Machines running: '+running.join(', ')); return; } if(!confirm('Reset Product, Strength, Batch and Remark?')) return; productSelect.value=''; strengthSelect.value=''; batchInput.value=''; remarkInput.value=''; localStorage.removeItem('productName'); localStorage.removeItem('strength'); localStorage.removeItem('batchNumber'); localStorage.removeItem('remark'); showLogs=false; updateHistory(); reorderMachines(); }
+window.toggleHiddenLogs = function(){ showHidden = document.getElementById('toggleHidden').checked; updateHistory(); }
+window.clearFilters = function(){ document.getElementById('filterProduct').value=''; document.getElementById('filterBatch').value=''; document.getElementById('filterDate').value=''; updateHistory(); }
+document.getElementById('filterProduct').addEventListener('input', updateHistory);
+document.getElementById('filterBatch').addEventListener('input', updateHistory);
+document.getElementById('filterDate').addEventListener('change', updateHistory);
+
+/* Save selections locally for quick restore */
+productSelect.addEventListener('change', ()=> localStorage.setItem('productName', productSelect.value));
+strengthSelect.addEventListener('change', ()=> localStorage.setItem('strength', strengthSelect.value));
+batchInput.addEventListener('input', ()=> localStorage.setItem('batchNumber', batchInput.value));
+remarkInput.addEventListener('input', ()=> localStorage.setItem('remark', remarkInput.value));
+window.addEventListener('load', ()=>{ productSelect.value = localStorage.getItem('productName') || ''; strengthSelect.value = localStorage.getItem('strength') || ''; batchInput.value = localStorage.getItem('batchNumber') || ''; remarkInput.value = localStorage.getItem('remark') || ''; });
+
+/* ---------- Firebase listener: flatten logs from DB ---------- */
+const logsRef = ref(db, 'logs');
+onValue(logsRef, snapshot => {
+  const data = snapshot.val();
+  if(!data){
+    logs = [];
+    saveLogsLocal();
+    machineNames.forEach(name=>{
+      const div = document.getElementById('log-'+name.replace(/\s+/g,'_'));
+      if(div) div.innerHTML='';
+      const light = document.getElementById(`light-${name.replace(/\s+/g,'_')}`);
+      if(light) light.classList.remove('blink');
+    });
+    updateHistory();
+    reorderMachines();
+    return;
+  }
+
+  logs = [];
+
+  function flattenLogs(obj, dateVal, productVal, batchVal){
+    for(const machineKey in obj){
+      const machineObj = obj[machineKey];
+      for(const logId in machineObj){
+        const entry = machineObj[logId];
+        logs.push({ id: logId, date: dateVal, product: productVal, strength: entry.strength || '',
+          batch: batchVal,
+          machine: machineKey,
+          start: entry.start || '',
+          stop: entry.stop || '',
+          remark: entry.remark || '',
+          userStart: entry.userStart || '',
+          userStop: entry.userStop || ''
+        });
+      }
+    }
+  }
+
+  // walk full hierarchy: date → product → batch → machine
+  for(const dateKey in data){
+    const productsObj = data[dateKey];
+    for(const productKey in productsObj){
+      const batchesObj = productsObj[productKey];
+      for(const batchKey in batchesObj){
+        flattenLogs(batchesObj[batchKey], dateKey, productKey, batchKey);
+      }
+    }
+  }
+
+  saveLogsLocal();
+  updateHistory();
+  updateMachineLogAll();
+  reorderMachines();
+});
+
+/* ---------- Update product datalist used by legacy places (keeps compatibility) ---------- */
+function updateProductList(){ const productSet = new Set(logs.map(l=>l.product).filter(Boolean)); const datalist = document.getElementById('productList'); if(!datalist) return; datalist.innerHTML=''; productSet.forEach(p=>{ const opt = document.createElement('option'); opt.value = p; datalist.appendChild(opt); }); const otherOpt = document.createElement('option'); otherOpt.value='Other'; datalist.appendChild(otherOpt); }
+
+/* ---------- Initial UI render ---------- */
+renderMachines(originalOrder);
+updateHistory();
+populateProductSelect();
+renderAdminList();
+renderProductAdminList();
+
+/* auto-open admin removed: now handled by direct modal button */
+
+
+/* ---------- Internet Connectivity Watchdog ---------- */
+let offlineModal = null;
+
+function showOfflineModal() {
+  if (offlineModal) return;
+  offlineModal = document.createElement("div");
+  offlineModal.style.position = "fixed";
+  offlineModal.style.inset = "0";
+  offlineModal.style.background = "rgba(0,0,0,0.6)";
+  offlineModal.style.zIndex = "10000";
+  offlineModal.style.display = "flex";
+  offlineModal.style.alignItems = "center";
+  offlineModal.style.justifyContent = "center";
+  offlineModal.innerHTML = `
+    <div style="background:#fff;padding:20px 30px;border-radius:12px;max-width:320px;text-align:center;box-shadow:0 6px 16px rgba(0,0,0,0.4);">
+      <h3 style="margin:0 0 10px;font-size:1.2rem;color:#b71c1c;">⚠ Internet Disconnected</h3>
+      <p style="margin:0 0 15px;font-size:0.95rem;">Retrying connection automatically...</p>
+    </div>
+  `;
+  document.body.appendChild(offlineModal);
+}
+
+function hideOfflineModal() {
+  if (offlineModal) {
+    offlineModal.remove();
+    offlineModal = null;
+  }
+}
+
+// disable machine actions when offline
+function disableMachineActions(disabled) {
+  document.querySelectorAll('button[onclick^="startMachine"], button[onclick^="stopMachine"]').forEach(btn => {
+    btn.disabled = disabled;
+    btn.style.opacity = disabled ? "0.5" : "1";
+    btn.style.cursor = disabled ? "not-allowed" : "pointer";
+  });
+}
+
+// monitor connection
+window.addEventListener("online", () => {
+  hideOfflineModal();
+  disableMachineActions(false);
+  // reload to ensure Firebase reconnects cleanly
+  location.reload();
+});
+
+window.addEventListener("offline", () => {
+  showOfflineModal();
+  disableMachineActions(true);
+});
+
+// initial check on load
+if (!navigator.onLine) {
+  showOfflineModal();
+  disableMachineActions(true);
+}
+
+
+/* ---------- Admin actions (fixed exposure) ---------- */
+
+
+window.showUserAccess = function(){
+  userListFilter = 'allow';
+  renderUserAdminList();
+};
+
+window.showBlockedUsers = function(){
+  userListFilter = 'block';
+  renderUserAdminList();
+};
+
+
+/* ---------- Improved Product Management (dedup + refresh) ---------- */
+
+
+
+
+
+/* ---------- Improved Product Management (dedup + refresh) ---------- */
+
+
+
+
+
+
+/* ---------- Product Management with Duplicate Check ---------- */
+window.addProductWithStrengths = function(){
+  const name = document.getElementById('newProductName').value.trim();
+  const strengthsRaw = document.getElementById('newProductStrengths').value.trim();
+  if(!name || !strengthsRaw){ 
+    alert('Enter product name and at least one strength'); 
+    return; 
+  }
+  const strengths = strengthsRaw.split(',').map(s=>s.trim()).filter(Boolean);
+
+  strengths.forEach(str => {
+    // check if already exists in cache
+    if (productsCache[name] && productsCache[name].includes(str)) {
+      alert(`Product "${name}" with strength "${str}" is already added.`);
+      return;
+    }
+
+    // use deterministic key
+    const key = (name + "_" + str).replace(/[^a-zA-Z0-9_-]/g,"_");
+    const pRef = ref(db, 'products/' + key);
+    set(pRef, { name, strength: str, active: true });
+  });
+
+  document.getElementById('newProductName').value='';
+  document.getElementById('newProductStrengths').value='';
+
+  // refresh UI immediately
+  populateProductSelect();
+  renderProductAdminList();
+};
+
+
+window.removeProduct = function(id){
+  if (!confirm("Remove this product/strength?")) return;
+  update(ref(db, `products/${id}`), { active: false }).then(() => {
+    // Force immediate refresh of UI
+    renderProductAdminList();
+    populateProductSelect();
+  });
+};
+
+
+
+/* ---------- Daily Verification ---------- */
+let verificationCache = {};
+const verificationRef = ref(db, 'verificationMachines');
+
+// Real-time listener for verification machines: updates admin list & modal immediately
+onValue(verificationRef, snapshot => {
+  const data = snapshot.val() || {};
+  verificationCache = data;
+  // update admin list if present
+  try{ renderVerificationAdminList(); }catch(e){ /* ignore if function not yet defined */ }
+
+  // If verification modal is open, refresh its content live
+  const modal = document.getElementById('dailyVerificationModal');
+  if(modal && modal.style.display === 'flex'){
+    const listEl = document.getElementById('verificationList');
+    if(listEl){
+      listEl.innerHTML = '';
+      for(const id in data){
+        const name = data[id];
+        listEl.innerHTML += `
+          <div class="verification-item">
+            <b>${escapeHtml(name)}</b>
+            <label>Start
+              <input type="time" step="60" id="verifyStart-${id}" step="60">
+            </label>
+            <label>Stop
+              <input type="time" step="60" id="verifyStop-${id}" step="60">
+            </label>
+          </div>`;
+      }
+    }
+  }
+});
+
+window.addVerificationMachine = function(){
+  const v = document.getElementById('newVerificationMachine').value.trim();
+  if(!v){ alert('Enter machine name'); return; }
+  const key = v.replace(/[^a-zA-Z0-9_-]/g,"_");
+  set(ref(db, `verificationMachines/${key}`), v).then(()=>{
+    // onValue will refresh the list automatically
+    document.getElementById('newVerificationMachine').value='';
+  }).catch(err=>{
+    console.error(err);
+    alert('Failed to add verification machine.');
+  });
+};
+
+window.removeVerificationMachine = function(id){
+  if(!confirm('Remove this verification machine permanently?')) return;
+  const vRef = ref(db, `verificationMachines/${id}`);
+  remove(vRef).then(()=>{
+    alert("✅ Machine removed from Daily Verification list");
+    renderVerificationAdminList();
+  }).catch(err=>{
+    console.error("Error removing machine:", err);
+  });
+};
+
+function renderVerificationAdminList(){
+  const listEl = document.getElementById('verificationAdminList');
+  if(!listEl) return;
+  listEl.innerHTML = '';
+  for(const id in verificationCache){
+    const name = verificationCache[id];
+    const div = document.createElement('div'); div.className='admin-item';
+    div.innerHTML = `<div>${escapeHtml(name)} ${verificationCache[id] && verificationCache[id].active === false ? '(Inactive)' : ''}</div><div><button onclick="removeVerificationMachine('${id}')" style="background:#dc3545;">Remove</button></div>`;
+    listEl.appendChild(div);
+  }
+}
+
+window.openDailyVerificationModal = function(){
+  const data = verificationCache || {};
+  const listEl = document.getElementById('verificationList');
+  listEl.innerHTML = '';
+  for(const id in data){
+    const name = data[id];
+    listEl.innerHTML += `
+      <div class="verification-item">
+        <b>${escapeHtml(name)}</b>
+        <label>Start
+          <input type="time" step="60" id="verifyStart-${id}" step="60">
+        </label>
+        <label>Stop
+          <input type="time" step="60" id="verifyStop-${id}" step="60">
+        </label>
+      </div>`;
+  }
+  document.getElementById('dailyVerificationModal').style.display='flex';
+};
+
+window.closeDailyVerificationModal = function(){
+  document.getElementById('dailyVerificationModal').style.display='none';
+};
+
+window.saveDailyVerification = function(){
+  const today = todayISO();
+  const data = verificationCache || {};
+  const updates = [];
+  for(const id in data){
+    const startEl = document.getElementById(`verifyStart-${id}`);
+    const stopEl = document.getElementById(`verifyStop-${id}`);
+    const start = startEl ? startEl.value : '';
+    const stop = stopEl ? stopEl.value : '';
+    if(start && stop){
+      const entryRef = ref(db, `dailyVerification/${today}/${id}`);
+      // Save as a single object (use set to ensure one record per machine per day)
+      set(entryRef, {
+        machine: data[id],
+        date: today,
+        start, stop,
+        product: "-", strength: "-",
+        remark: "Daily Verification",
+        user: currentUser
+      });
+    }
+  }
+  closeDailyVerificationModal();
+};
+
+// Patch startMachine to require verification first
+
+
+
+
+/* ---------- No More Access (Global Lockout) ---------- */
+const noAccessRef = ref(db, 'noMoreAccess');
+
+window.toggleNoAccess = function(){
+  get(noAccessRef).then(snap=>{
+    const active = snap.val() === true;
+    set(noAccessRef, !active);
+  });
+}
+
+
+onValue(noAccessRef, snap=>{
+  const active = snap.val() === true;
+  const btn = document.getElementById('noAccessBtn');
+  const banner = document.getElementById('noAccessBanner');
+  if(btn){
+    if(active){
+      btn.classList.add('blink');
+      btn.innerText = "No More Access (Active)";
+    } else {
+      btn.classList.remove('blink');
+      btn.innerText = "No More Access";
+    }
+  }
+  if(banner){
+    banner.style.display = active ? 'block' : 'none';
+  }
+});
+
+
+// Patch startMachine to respect No More Access flag
+
+
+
+window.openAdminModal = function(){
+  const pwd = prompt("Enter admin password:");
+  if(pwd !== "7046802785"){
+    alert("Incorrect password");
+    return;
+  }
+  renderAdminList();
+  renderProductAdminList();
+  renderUserAdminList();
+  renderVerificationAdminList();
+  adminModal.style.display='flex';
+  adminModal.setAttribute('aria-hidden','false');
+};
+
+
+/* ---------- Firebase Disconnect Handling ---------- */
+const connectedRef = ref(db, ".info/connected");
+
+onValue(connectedRef, (snap) => {
+  const connected = snap.val() === true;
+  const banner = document.getElementById("firebaseDisconnectBanner");
+  if(banner){
+    banner.style.display = connected ? "none" : "block";
+  }
+  if(typeof disableMachineActions === "function"){
+    disableMachineActions(!connected);
+  }
+});
+
+
+/* ---------- Unified startMachine (with checks: NoMoreAccess, Verification, Block) ---------- */
+window.startMachine = async function(machineName){
+  // Prevent double start: check if machine already running
+  const existingRunning = logs.find(l => l.machine === machineName && !l.stop);
+  if(existingRunning){
+    alert(`⚠️ Machine already started at ${formatTimeHHMM(existingRunning.start)} by ${existingRunning.userStart}`);
+    return;
+  }
+
+  try{
+    // Check No More Access global lock
+    const noAccessSnap = await get(noAccessRef);
+    if(noAccessSnap && noAccessSnap.val() === true){
+      alert("Access denied: No More Access mode is active.");
+      return;
+    }
+
+    // Check if user is blocked
+    const me = usersCache[deviceId];
+    if(me && me.status === 'block'){
+      alert('Access denied — you are blocked.');
+      return;
+    }
+
+    // Check product/strength/batch presence
+    const product = (productSelect && productSelect.value) ? productSelect.value : "";
+    const strength = (strengthSelect && strengthSelect.value) ? strengthSelect.value : "";
+    const batch = (batchInput && batchInput.value) ? batchInput.value : "";
+    if(!product || !strength || !batch){
+      alert("Please select product, strength and batch before starting.");
+      return;
+    }
+
+    // If verification required for this machine, ensure today's verification exists
+const key = machineName.replace(/[^a-zA-Z0-9_-]/g,"_");
+if(typeof verificationCache !== 'undefined' && verificationCache && verificationCache[key]){
+  const today = todayISO();
+  const vref = ref(db, `logs/${today}/-/-/${machineName}`);
+  const vsnap = await get(vref);
+  if(!vsnap.exists()){
+    alert("Daily Verification not done for " + machineName);
+    return;
+  }
+  const entries = Object.values(vsnap.val() || {});
+  const verified = entries.some(e => e && e.remark === "Daily Verification");
+  if(!verified){
+    alert("Daily Verification not done for " + machineName);
+    return;
+  }
+}
+
+    // Everything OK — create log entry
+    const date = todayISO();
+    const baseRef = ref(db, `logs/${date}/${product}/${batch}/${machineName}`);
+    const newPush = push(baseRef);
+    const logId = newPush.key || ('log_' + Date.now());
+    const startTime = getDateTime ? getDateTime() : new Date().toLocaleString();
+    const entry = {
+      start: startTime,
+      product: product,
+      strength: strength,
+      batch: batch,
+      remark: (typeof remarkInput !== 'undefined' && remarkInput) ? remarkInput.value : "",
+      userStart: typeof currentUser !== 'undefined' ? currentUser : "unknown"
+    };
+    // write entry
+    await set(ref(db, `logs/${date}/${product}/${batch}/${machineName}/${logId}`), entry);
+
+    // Update local UI state: reorder machines and update logs will be reflected by onValue listener, but force local updates for instant UX
+    if(typeof reorderMachines === 'function') reorderMachines();
+    setTimeout(()=>{ if(typeof updateMachineLog === 'function') updateMachineLog(machineName); if(typeof updateHistory === 'function') updateHistory(); }, 200);
+
+  }catch(err){
+    console.error("startMachine error:", err);
+    alert("Error starting machine. Try again.");
+  }
+};
+
+function removeVerificationMachine(machineKey) {
+  if (!confirm("Are you sure you want to remove this machine from Daily Verification?")) return;
+  const vRef = ref(db, `verificationMachines/${machineKey}`);
+  remove(vRef).then(() => {
+    alert("✅ Machine removed from Daily Verification");
+    loadVerificationMachines(); // refresh UI
+  }).catch(err => {
+    console.error("Error removing machine:", err);
+  });
+}
+
+/* ---- Patch: Save daily verification into logs/{date}/-/-/{machine} so they merge with normal logs ---- */
+
+/* ---- Fixed Daily Verification Save ---- */
+window.saveDailyVerification = async function(){
+  try {
+    const today = todayISO();
+    for(const id in verificationCache){
+      const startEl = document.getElementById(`verifyStart-${id}`);
+      const stopEl  = document.getElementById(`verifyStop-${id}`);
+      if(!startEl || !stopEl) continue;
+
+      const startVal = startEl.value;
+      const stopVal  = stopEl.value;
+      if(!startVal && !stopVal) continue;
+
+      const machineName = verificationCache[id] || id;
+      const baseRef = ref(db, `logs/${today}/-/-/${machineName}`);
+
+      // Check if verification already exists
+      const snap = await get(baseRef);
+      if (snap.exists()) {
+        const entries = Object.values(snap.val() || {});
+        const existing = entries.find(e => e.remark === "Daily Verification");
+        if(existing){
+          alert(`⚠ Daily Verification already done for ${machineName}
+Start: ${existing.start}
+Stop: ${existing.stop}`);
+          continue; // skip writing duplicate
+        }
+      }
+
+      // build timestamped values
+      const dateObj = new Date();
+      let startTime = "";
+      let stopTime  = "";
+      if (startVal) {
+        const [sh, sm] = startVal.split(":");
+        startTime = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), sh, sm).toLocaleString();
+      }
+      if (stopVal) {
+        const [eh, em] = stopVal.split(":");
+        stopTime = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), eh, em).toLocaleString();
+      }
+
+      // Save new verification log
+      const newLogRef = push(baseRef);
+      await set(newLogRef, {
+        product: "-",
+        strength: "-",
+        batch: "-",
+        start: startTime,
+        stop: stopTime,
+        remark: "Daily Verification",
+        userStart: currentUser,
+        userStop: currentUser,
+        timestamp: Date.now()
+      });
+    }
+    alert("✅ Daily Verification saved.");
+    document.getElementById("dailyVerificationModal").style.display = "none";
+  } catch(err) {
+    console.error("Error saving daily verification:", err);
+    alert("Error saving daily verification.");
+  }
+};
+
+
+/* ---- Patch: load today's verification for a machine from logs/{date}/-/-/{machine} ---- */
+function loadTodayVerification(machineKey){
+  try{
+    const today = todayISO();
+    const vRef = ref(db, `logs/${today}/-/-/${machineKey}`);
+    onValue(vRef, snap => {
+      const startEl = document.getElementById(`startTime_${machineKey}`) || document.getElementById('verifyStart-' + machineKey);
+      const stopEl  = document.getElementById(`stopTime_${machineKey}`) || document.getElementById('verifyStop-' + machineKey);
+      if(!startEl || !stopEl) return;
+      if(!snap.exists()){
+        startEl.value = '';
+        stopEl.value = '';
+        return;
+      }
+      const entries = Object.values(snap.val() || {});
+      // find the latest entry that is Daily Verification
+      const last = entries.filter(e => e && e.remark === 'Daily Verification').pop();
+      if(last){
+        startEl.value = last.start || '';
+        stopEl.value  = last.stop  || '';
+      } else {
+        startEl.value = '';
+        stopEl.value  = '';
+      }
+    });
+  }catch(err){
+    console.error('loadTodayVerification error', err);
+  }
+}
+
+/* ---- Ensure buttons that previously saved to dailyVerification call the new saveDailyVerification ---- */
+try{
+  const oldBtn = document.querySelector('[id="saveDailyVerificationBtn"]');
+  if(oldBtn) oldBtn.onclick = window.saveDailyVerification;
+}catch(e){}
+
+
+function normalizeTimeSort(entry){
+  if(entry.timestamp) return entry.timestamp;
+  if(entry.start){
+    let d = new Date(entry.start);
+    if(!isNaN(d.getTime())) return d.getTime();
+  }
+  return 0;
+}
+
+
+function formatDateDDMMYYYY(dateStr){
+  if(!dateStr) return "";
+  const parts = dateStr.split("-");
+  if(parts.length !== 3) return dateStr;
+  return `${parts[2]}-${parts[1]}-${parts[0]}`;
+}
+function formatTimeHHMM(datetimeStr){
+  if(!datetimeStr) return "";
+  const d = new Date(datetimeStr);
+  if(isNaN(d.getTime())) return datetimeStr;
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12:false });
+}
+
+
+// --- Fix: Block / Allow user management ---
+window.blockUser = function(userId){
+  if(!confirm("Block this user?")) return;
+  update(ref(db, `users/${userId}`), { status: "block" })
+    .then(()=> {
+      alert("🚫 User blocked");
+      renderUserAdminList();
+    })
+    .catch(err=>alert("Error blocking user: " + err));
+};
+
+window.allowUser = function(userId){
+  if(!confirm("Allow this user?")) return;
+  update(ref(db, `users/${userId}`), { status: "allow" })
+    .then(()=> {
+      alert("✅ User allowed");
+      renderUserAdminList();
+    })
+    .catch(err=>alert("Error allowing user: " + err));
+};
+
+// Patch Daily Verification rendering: show saved times instead of inputs
+function renderVerificationItem(machineKey, machineName, entry) {
+  const listEl = document.getElementById('verificationList');
+  let html = `<div class="verification-item"><b>${escapeHtml(machineName)}</b>`;
+
+  if (entry) {
+    // Show saved date + times
+    const datePart = formatDateDDMMYYYY(entry.date || todayISO());
+    const startFmt = formatTimeHHMM(entry.start);
+    const stopFmt  = formatTimeHHMM(entry.stop);
+    html += `<span>✅ Verified on ${datePart} | Start: ${startFmt} | Stop: ${stopFmt}</span>`;
+  } else {
+    // Show input boxes if not yet verified
+    html += `
+      <label>Start
+        <input type="time" step="60" id="verifyStart-${machineKey}">
+      </label>
+      <label>Stop
+        <input type="time" step="60" id="verifyStop-${machineKey}">
+      </label>`;
+  }
+  html += `</div>`;
+  listEl.innerHTML += html;
+}
+
+window.openDailyVerificationModal = async function() {
+  const listEl = document.getElementById('verificationList');
+  listEl.innerHTML = '';
+  const today = todayISO();
+
+  for (const id in verificationCache) {
+    const machineName = verificationCache[id];
+    const vRef = ref(db, `logs/${today}/-/-/${machineName}`);
+    const snap = await get(vRef);
+
+    let entry = null;
+    if (snap.exists()) {
+      const entries = Object.values(snap.val());
+      entry = entries.find(e => e.remark === "Daily Verification");
+    }
+    renderVerificationItem(id, machineName, entry);
+  }
+  document.getElementById('dailyVerificationModal').style.display='flex';
+};
+
+
+</script>
+
+</body>
+</html>
